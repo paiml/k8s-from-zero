@@ -9,6 +9,8 @@ kubectl get pods -o json | cargo run -q -- pods
 kubectl get deploy -o json | cargo run -q -- deploys
 ```
 
+Example manifests for the course demos live in `examples/`.
+
 Exit code 1 means something is failing or stalled; 2 means bad input.
 
 Every run of `pods` prints `contract: pod-summary-partition OK` after asserting that the
