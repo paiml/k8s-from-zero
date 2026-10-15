@@ -1,0 +1,20 @@
+[package]
+name = "kubelens"
+version = "0.1.0"
+edition = "2021"
+description = "Read-only health lens over kubectl JSON output"
+license = "MIT"
+publish = false
+
+[lib]
+name = "kubelens"
+path = "src/lib.rs"
+
+[[bin]]
+name = "kubelens"
+path = "src/main.rs"
+
+[dependencies]
+k8s-openapi = { version = "0.28.0", features = ["latest"] }
+serde = "1.0.229"
+serde_json = "1"

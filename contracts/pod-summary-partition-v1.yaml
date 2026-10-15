@@ -1,0 +1,38 @@
+metadata:
+  version: 1.0.0
+  description: "kubelens pod summary: every pod lands in exactly one health bucket"
+  references:
+  - 'Kubernetes Pod lifecycle: phases and container states'
+equations:
+  pod_summary_partition:
+    formula: "ready + pending + done + failing == total"
+    invariants:
+    - No pod is counted twice
+    - No pod is dropped
+    preconditions:
+    - 'every pod in the list has exactly one phase and container-state reading'
+    - 'the list is the items array of a kubectl List, possibly empty'
+    postconditions:
+    - 'kubelens pods prints "contract: pod-summary-partition OK" only after the partition holds'
+    lean_theorem: none_repository_fact
+proof_obligations:
+- type: invariant
+  property: "bucket counts sum to the number of pods"
+falsification_tests:
+- id: FALSIFY-K8S-001
+  rule: "a corrupted summary is rejected"
+  prediction: "partition_contract_fires_when_broken passes only if check_partition panics on a bad sum"
+  if_fails: "kubelens would print contract OK for a summary that drops pods"
+kani_harnesses:
+- id: KANI-K8S-001
+  obligation: "bucket counts sum to the number of pods"
+  bound: 4
+  strategy: bounded_int
+  solver: cadical
+qa_gate:
+  id: F-K8S-001
+  name: "pod summary partition contract"
+  description: "the contract line prints only when the partition holds"
+  checks:
+  - validation
+  - falsification

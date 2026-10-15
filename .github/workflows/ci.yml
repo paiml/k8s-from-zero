@@ -1,0 +1,16 @@
+name: ci
+on:
+  pull_request:
+  push:
+    branches: [main]
+jobs:
+  gate:
+    runs-on: [self-hosted, clean-room, X64, intel]
+    steps:
+      - uses: actions/checkout@v4
+      - run: cargo fmt --all -- --check
+      - run: cargo test
+      - run: bash scripts/coverage.sh
+      - run: bash scripts/falsify.sh
+      - run: pv lint contracts
+      - run: pmat comply
