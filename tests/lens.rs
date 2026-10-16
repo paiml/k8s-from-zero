@@ -208,3 +208,98 @@ fn run_errors_and_usage() {
 #[test]
 #[ignore]
 fn calls_nothing() {}
+
+mod audit_tests {
+    use kubelens::audit::*;
+    use kubelens::run;
+    use serde_json::json;
+
+    fn role(rules: serde_json::Value) -> serde_json::Value {
+        json!({"metadata": {"name": "r"}, "rules": rules})
+    }
+
+    #[test]
+    fn clean_role_has_no_findings() {
+        let r = role(json!([{"verbs": ["get"], "resources": ["pods"]}]));
+        assert!(role_findings(&r).is_empty());
+    }
+
+    #[test]
+    fn every_problem_is_reported() {
+        let r = role(json!([
+            {"verbs": ["*"], "resources": ["*"]},
+            {"verbs": ["escalate", "get"], "resources": ["secrets"]}
+        ]));
+        let probs: Vec<_> = role_findings(&r).into_iter().map(|f| f.problem).collect();
+        assert_eq!(
+            probs,
+            [
+                "wildcard verb",
+                "wildcard resource",
+                "privilege escalation verb",
+                "reads secrets"
+            ]
+        );
+    }
+
+    #[test]
+    fn role_without_rules_or_name_is_clean() {
+        assert!(role_findings(&json!({})).is_empty());
+        let f = role_findings(&json!({"rules": [{"verbs": ["*"]}]}));
+        assert_eq!(f[0].subject, "?");
+    }
+
+    #[test]
+    fn rbac_list_flattens() {
+        let l = json!({"items": [role(json!([{"verbs": ["*"], "resources": ["pods"]}])), role(json!([]))]});
+        assert_eq!(rbac_findings(&l).len(), 1);
+        assert!(rbac_findings(&json!({})).is_empty());
+    }
+
+    fn dep(image: &str, limits: bool) -> serde_json::Value {
+        let mut c = json!({"image": image});
+        if limits {
+            c["resources"] = json!({"limits": {"cpu": "1"}});
+        }
+        json!({"kind": "Deployment", "metadata": {"name": "d"},
+               "spec": {"template": {"spec": {"containers": [c]}}}})
+    }
+
+    #[test]
+    fn manifest_checks() {
+        let ok = json!({"items": [dep("nginx:1.27", true), {"kind": "Service"}]});
+        assert!(manifest_findings(&ok).is_empty());
+        let bad = json!({"items": [dep("nginx", false), dep("nginx:latest", true)]});
+        let probs: Vec<_> = manifest_findings(&bad)
+            .into_iter()
+            .map(|f| f.problem)
+            .collect();
+        assert_eq!(
+            probs,
+            ["image not pinned", "no resource limits", "image not pinned"]
+        );
+        let noimg = json!({"items": [{"kind": "Deployment", "spec": {"template": {"spec": {"containers": [{}]}}}}]});
+        assert_eq!(manifest_findings(&noimg).len(), 2);
+        assert!(manifest_findings(&json!({"items": [{"kind": "Deployment"}]})).is_empty());
+    }
+
+    #[test]
+    #[should_panic]
+    fn contract_fires_when_a_wildcard_hides() {
+        check_least_privilege(&json!({"verbs": ["*"]}), &[]);
+    }
+
+    #[test]
+    fn run_subcommands() {
+        let a = |s: &str| vec![s.to_string()];
+        let (out, code) = run(
+            &a("rbac"),
+            r#"{"items":[{"metadata":{"name":"x"},"rules":[{"verbs":["*"],"resources":["pods"]}]}]}"#,
+        );
+        assert_eq!(code, 1);
+        assert!(out.contains("x\twildcard verb") && out.contains("contract: least-privilege OK"));
+        let (out, code) = run(&a("manifests"), r#"{"items":[]}"#);
+        assert_eq!((code, out.contains("findings=0")), (0, true));
+        assert_eq!(run(&a("rbac"), "nope").1, 2);
+    }
+}

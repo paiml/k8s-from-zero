@@ -1,0 +1,37 @@
+metadata:
+  version: 1.0.0
+  description: "kubelens audit: a clean RBAC or manifest audit means no wildcard anywhere in the input"
+  references:
+  - 'Kubernetes Pod lifecycle: phases and container states'
+equations:
+  pod_summary_partition:
+    formula: "findings.is_empty() implies no wildcard in the audited input"
+    invariants:
+    - No wildcard role passes the audit
+    - No wildcard hides behind an empty findings list
+    preconditions:
+    - "the input is the items array of a kubectl List"
+    postconditions:
+    - 'kubelens rbac or manifests prints "contract: least-privilege OK" only after the partition holds'
+    lean_theorem: none_repository_fact
+proof_obligations:
+- type: invariant
+  property: "a clean audit has no wildcard in the audited input"
+falsification_tests:
+- id: FALSIFY-K8S-002
+  rule: "a wildcard hidden behind an empty findings list is rejected"
+  prediction: "contract_fires_when_a_wildcard_hides passes only if check_least_privilege panics"
+  if_fails: "kubelens would print contract OK for an audit that missed a wildcard"
+kani_harnesses:
+- id: KANI-K8S-002
+  obligation: "a clean audit has no wildcard in the audited input"
+  bound: 4
+  strategy: bounded_int
+  solver: cadical
+qa_gate:
+  id: F-K8S-002
+  name: "least-privilege contract"
+  description: "the contract line prints only when no wildcard hides"
+  checks:
+  - validation
+  - falsification

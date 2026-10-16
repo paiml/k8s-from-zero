@@ -1,4 +1,5 @@
 //! kubelens: classify pod and deployment health from `kubectl get -o json`.
+pub mod audit;
 use k8s_openapi::api::apps::v1::Deployment;
 use k8s_openapi::api::core::v1::{Pod, PodStatus};
 
@@ -151,13 +152,28 @@ fn run_deploys(input: &str) -> (String, i32) {
     (out, i32::from(bad))
 }
 
+fn run_audit(input: &str, f: fn(&serde_json::Value) -> Vec<audit::Finding>) -> (String, i32) {
+    let v: serde_json::Value = match serde_json::from_str(input) {
+        Ok(v) => v,
+        Err(e) => return (format!("invalid kubectl json: {e}\n"), 2),
+    };
+    let found = f(&v);
+    audit::check_least_privilege(&v, &found);
+    let mut out = audit::render(&found);
+    out.push_str(&format!("findings={}\n", found.len()));
+    out.push_str("contract: least-privilege OK\n");
+    (out, i32::from(!found.is_empty()))
+}
+
 /// Run a subcommand over JSON input. Returns (stdout, exit code).
 pub fn run(args: &[String], input: &str) -> (String, i32) {
     match args.first().map(String::as_str) {
         Some("pods") => run_pods(input),
         Some("deploys") => run_deploys(input),
+        Some("rbac") => run_audit(input, audit::rbac_findings),
+        Some("manifests") => run_audit(input, audit::manifest_findings),
         _ => (
-            "usage: kubelens <pods|deploys> < kubectl-json\n".to_string(),
+            "usage: kubelens <pods|deploys|rbac|manifests> < kubectl-json\n".to_string(),
             2,
         ),
     }
